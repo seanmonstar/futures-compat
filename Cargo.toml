@@ -1,0 +1,15 @@
+[package]
+name = "futures-compat"
+version = "0.1.0"
+authors = ["Sean McArthur <sean@seanmonstar.com>"]
+
+[dependencies]
+futures-compat-01 = { path = "./futures-compat-01" }
+futures-compat-02 = { path = "./futures-compat-02" }
+
+[workspace]
+members = [
+    "./",
+    "futures-compat-01",
+    "futures-compat-02"
+]

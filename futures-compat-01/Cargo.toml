@@ -1,0 +1,7 @@
+[package]
+name = "futures-compat-01"
+version = "0.1.0"
+authors = ["Sean McArthur <sean@seanmonstar.com>"]
+
+[dependencies]
+futures = "0.1"

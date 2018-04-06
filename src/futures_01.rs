@@ -1,11 +1,14 @@
 //! futures 0.1.x compatibility.
-use std::{mem, ptr};
+use std::{mem, io, ptr};
 
 use futures::{Async as Async01, Future as Future01, Stream as Stream01};
 use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
 
 use futures_core::{Async as Async02, Future as Future02, Poll as Poll02, Stream as Stream02};
 use futures_core::task::{Context, Waker};
+use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
+
+use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
 
 /// Wrap a `Future` from v0.1 as a `Future` from v0.2.
 #[derive(Debug)]
@@ -21,6 +24,12 @@ pub struct Stream01As02<S> {
     v01: S,
 }
 
+/// Wrap a IO from tokio-io as an `AsyncRead`/`AsyncWrite` from v0.2.
+#[derive(Debug)]
+pub struct TokioAsAsyncIo02<I> {
+    v01: I,
+}
+
 /// A trait to convert any `Future` from v0.1 into a [`Future01As02`](Future01As02).
 ///
 /// Implemented for all types that implement v0.1's `Future` automatically.
@@ -34,6 +43,16 @@ pub trait FutureInto02: Future01 {
 pub trait StreamInto02: Stream01 {
     /// Converts this stream into a `Stream01As02`.
     fn into_02_compat(self) -> Stream01As02<Self> where Self: Sized;
+}
+
+/// A trait to convert any `AsyncRead`/`AsyncWrite` from tokio-io into a [`TokioAsAsyncIo02`](TokioAsAsyncIo02).
+///
+/// Implemented for all types that implement tokio-io's `AsyncRead`/`AsyncWrite` automatically.
+pub trait AsyncIoIntoTokio {
+    /// Converts this IO into an `TokioAsAsyncIo02`.
+    fn into_v02_compat(self) -> TokioAsAsyncIo02<Self>
+    where
+        Self: AsyncReadTk + AsyncWriteTk + Sized;
 }
 
 impl<F> FutureInto02 for F
@@ -92,6 +111,61 @@ where
     fn poll_next(&mut self, cx: &mut Context) -> Poll02<Option<Self::Item>, Self::Error> {
         with_context(cx, || {
             match self.v01.poll() {
+                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
+                Ok(Async01::NotReady) => Ok(Async02::Pending),
+                Err(err) => Err(err),
+            }
+        })
+    }
+}
+
+impl<I> AsyncIoIntoTokio for I {
+    fn into_v02_compat(self) -> TokioAsAsyncIo02<Self>
+    where
+        Self: AsyncReadTk + AsyncWriteTk + Sized,
+    {
+        TokioAsAsyncIo02 {
+            v01: self,
+        }
+    }
+}
+
+impl<I: AsyncReadTk> AsyncRead02 for TokioAsAsyncIo02<I> {
+    fn poll_read(&mut self, cx: &mut Context, buf: &mut [u8]) -> Poll02<usize, io::Error> {
+        with_context(cx, || {
+            match self.v01.poll_read(buf) {
+                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
+                Ok(Async01::NotReady) => Ok(Async02::Pending),
+                Err(err) => Err(err),
+            }
+        })
+    }
+}
+
+impl<I: AsyncWriteTk> AsyncWrite02 for TokioAsAsyncIo02<I> {
+    fn poll_write(&mut self, cx: &mut Context, buf: &[u8]) -> Poll02<usize, io::Error> {
+        with_context(cx, || {
+            match self.v01.poll_write(buf) {
+                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
+                Ok(Async01::NotReady) => Ok(Async02::Pending),
+                Err(err) => Err(err),
+            }
+        })
+    }
+
+    fn poll_flush(&mut self, cx: &mut Context) -> Poll02<(), io::Error> {
+        with_context(cx, || {
+            match self.v01.poll_flush() {
+                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
+                Ok(Async01::NotReady) => Ok(Async02::Pending),
+                Err(err) => Err(err),
+            }
+        })
+    }
+
+    fn poll_close(&mut self, cx: &mut Context) -> Poll02<(), io::Error> {
+        with_context(cx, || {
+            match self.v01.shutdown() {
                 Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
                 Ok(Async01::NotReady) => Ok(Async02::Pending),
                 Err(err) => Err(err),

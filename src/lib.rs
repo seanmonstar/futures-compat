@@ -10,6 +10,8 @@
 
 extern crate futures;
 extern crate futures_core;
+extern crate futures_io;
+extern crate tokio_io;
 
 pub mod futures_01;
 pub mod futures_02;

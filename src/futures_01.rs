@@ -1,7 +1,7 @@
 //! futures 0.1.x compatibility.
 use std::{mem, io, ptr};
 
-use futures::{Async as Async01, Future as Future01, Stream as Stream01};
+use futures::{Async as Async01, Future as Future01, Poll as Poll01, Stream as Stream01};
 use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
 
 use futures_core::{Async as Async02, Future as Future02, Poll as Poll02, Stream as Stream02};
@@ -77,13 +77,7 @@ where
     type Error = F::Error;
 
     fn poll(&mut self, cx: &mut Context) -> Poll02<Self::Item, Self::Error> {
-        with_context(cx, || {
-            match self.v01.poll() {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.poll())
     }
 }
 
@@ -109,13 +103,7 @@ where
     type Error = S::Error;
 
     fn poll_next(&mut self, cx: &mut Context) -> Poll02<Option<Self::Item>, Self::Error> {
-        with_context(cx, || {
-            match self.v01.poll() {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.poll())
     }
 }
 
@@ -132,45 +120,21 @@ impl<I> TokioIntoAsyncIo02 for I {
 
 impl<I: AsyncReadTk> AsyncRead02 for TokioAsAsyncIo02<I> {
     fn poll_read(&mut self, cx: &mut Context, buf: &mut [u8]) -> Poll02<usize, io::Error> {
-        with_context(cx, || {
-            match self.v01.poll_read(buf) {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.poll_read(buf))
     }
 }
 
 impl<I: AsyncWriteTk> AsyncWrite02 for TokioAsAsyncIo02<I> {
     fn poll_write(&mut self, cx: &mut Context, buf: &[u8]) -> Poll02<usize, io::Error> {
-        with_context(cx, || {
-            match self.v01.poll_write(buf) {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.poll_write(buf))
     }
 
     fn poll_flush(&mut self, cx: &mut Context) -> Poll02<(), io::Error> {
-        with_context(cx, || {
-            match self.v01.poll_flush() {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.poll_flush())
     }
 
     fn poll_close(&mut self, cx: &mut Context) -> Poll02<(), io::Error> {
-        with_context(cx, || {
-            match self.v01.shutdown() {
-                Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
-                Ok(Async01::NotReady) => Ok(Async02::Pending),
-                Err(err) => Err(err),
-            }
-        })
+        with_context_poll(cx, || self.v01.shutdown())
     }
 }
 
@@ -180,6 +144,21 @@ where
     F: FnOnce() -> R,
 {
     with_notify(&WakerToHandle(cx.waker()), 0, f)
+}
+
+/// Execute a function with the context used as a v0.1 `Notifier`, converting
+/// v0.1 `Poll` into v0.2 version.
+pub fn with_context_poll<F, R, E>(cx: &mut Context, f: F) -> Poll02<R, E>
+where
+    F: FnOnce() -> Poll01<R, E>,
+{
+    with_context(cx, move || {
+        match f() {
+            Ok(Async01::Ready(val)) => Ok(Async02::Ready(val)),
+            Ok(Async01::NotReady) => Ok(Async02::Pending),
+            Err(err) => Err(err),
+        }
+    })
 }
 
 struct NotifyWaker(Waker);

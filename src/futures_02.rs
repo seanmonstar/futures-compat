@@ -1,18 +1,29 @@
+//! futures 0.2.x compatibility.
 use std::sync::Arc;
 
-use futures_compat_01::{Async as Async01, Future as Future01, Poll as Poll01};
-use futures_compat_01::task::{self as task01, Task as Task01};
+use futures::{Async as Async01, Future as Future01, Poll as Poll01};
+use futures::task::{self as task01, Task as Task01};
 
-use futures_compat_02::{Async as Async02, Future as Future02};
-use futures_compat_02::task::{Context, LocalMap, Wake, Waker};
-use futures_compat_02::executor::{Executor as Executor02};
+use futures_core::{Async as Async02, Future as Future02};
+use futures_core::task::{Context, LocalMap, Wake, Waker};
+use futures_core::executor::{Executor as Executor02};
 
+/// Wrap a `Future` from v0.2 as a `Future` from v0.1.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
 pub struct Future02As01<E, F> {
     exec: E,
     v02: F,
 }
 
+/// A trait to convert any `Future` from v0.2 into a [`Future02As01`](Future02As01).
+///
+/// Implemented for all types that implement v0.2's `Future` automatically.
 pub trait FutureInto01: Future02 {
+    /// Converts this future into a `Future02As01`.
+    ///
+    /// An executor is required to allow this wrapped future to still access
+    /// `Context::spawn` while wrapped.
     fn into_01_compat<E>(self, exec: E) -> Future02As01<E, Self>
     where
         Self: Sized,

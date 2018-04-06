@@ -1,15 +1,11 @@
 [package]
 name = "futures-compat"
-version = "0.1.0"
+version = "0.0.0"
+description = "A compatibility layer between different versions of Future."
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
+license = "MIT"
 
 [dependencies]
-futures-compat-01 = { path = "./futures-compat-01" }
-futures-compat-02 = { path = "./futures-compat-02" }
+futures = "0.1"
+futures-core = "0.2"
 
-[workspace]
-members = [
-    "./",
-    "futures-compat-01",
-    "futures-compat-02"
-]

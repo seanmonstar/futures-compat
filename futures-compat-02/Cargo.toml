@@ -1,7 +1,0 @@
-[package]
-name = "futures-compat-02"
-version = "0.1.0"
-authors = ["Sean McArthur <sean@seanmonstar.com>"]
-
-[dependencies]
-futures-core = { git = "https://github.com/rust-lang-nursery/futures-rs" }

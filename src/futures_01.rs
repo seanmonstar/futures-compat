@@ -1,16 +1,24 @@
+//! futures 0.1.x compatibility.
 use std::{mem, ptr};
 
-use futures_compat_01::{Async as Async01, Future as Future01};
-use futures_compat_01::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
+use futures::{Async as Async01, Future as Future01};
+use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
 
-use futures_compat_02::{Async as Async02, Future as Future02, Poll as Poll02};
-use futures_compat_02::task::{Context, Waker};
+use futures_core::{Async as Async02, Future as Future02, Poll as Poll02};
+use futures_core::task::{Context, Waker};
 
+/// Wrap a `Future` from v0.1 as a `Future` from v0.2.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
 pub struct Future01As02<F> {
     v01: F,
 }
 
+/// A trait to convert any `Future` from v0.1 into a [`Future01As02`](Future01As02).
+///
+/// Implemented for all types that implement v0.1's `Future` automatically.
 pub trait FutureInto02: Future01 {
+    /// Converts this future into a `Future01As02`.
     fn into_02_compat(self) -> Future01As02<Self> where Self: Sized;
 }
 
@@ -46,6 +54,7 @@ where
     }
 }
 
+/// Execute a function with the context used as a v0.1 `Notifier`.
 pub fn with_context<F, R>(cx: &mut Context, f: F) -> R
 where
     F: FnOnce() -> R,
@@ -55,6 +64,7 @@ where
 
 struct NotifyWaker(Waker);
 
+#[allow(missing_debug_implementations)]
 #[derive(Clone)]
 struct WakerToHandle<'a>(&'a Waker);
 

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures::{Async as Async01, Future as Future01, Poll as Poll01, Stream as Stream01};
 use futures::task::{self as task01, Task as Task01};
 
-use futures_core::{Async as Async02, Future as Future02, Stream as Stream02};
+use futures_core::{Async as Async02, Future as Future02, Never, Stream as Stream02};
 use futures_core::task::{Context, LocalMap, Wake, Waker};
 use futures_core::executor::{Executor as Executor02};
 use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
@@ -15,6 +15,14 @@ use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
 pub struct Future02As01<E, F> {
+    exec: E,
+    v02: F,
+}
+
+/// A `Future02As01` that maps errors of `Never` to `()`.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+pub struct Future02NeverAs01Unit<E, F> {
     exec: E,
     v02: F,
 }
@@ -45,6 +53,15 @@ pub trait FutureInto01: Future02 {
     fn into_01_compat<E>(self, exec: E) -> Future02As01<E, Self>
     where
         Self: Sized,
+        E: Executor02;
+
+    /// Converts this future into a `Future02NeverAs01Unit`.
+    ///
+    /// An executor is required to allow this wrapped future to still access
+    /// `Context::spawn` while wrapped.
+    fn into_01_compat_never_unit<E>(self, exec: E) -> Future02NeverAs01Unit<E, Self>
+    where
+        Self: Future02<Error=Never> + Sized,
         E: Executor02;
 }
 
@@ -90,6 +107,17 @@ where
             v02: self,
         }
     }
+
+    fn into_01_compat_never_unit<E>(self, exec: E) -> Future02NeverAs01Unit<E, Self>
+    where
+        Self: Sized,
+        E: Executor02,
+    {
+        Future02NeverAs01Unit {
+            exec,
+            v02: self,
+        }
+    }
 }
 
 impl<E, F> Future01 for Future02As01<E, F>
@@ -109,6 +137,27 @@ where
             Ok(Async02::Ready(val)) => Ok(Async01::Ready(val)),
             Ok(Async02::Pending) => Ok(Async01::NotReady),
             Err(err) => Err(err),
+        }
+    }
+}
+
+impl<E, F> Future01 for Future02NeverAs01Unit<E, F>
+where
+    F: Future02<Error=Never>,
+    E: Executor02,
+{
+    type Item = F::Item;
+    type Error = ();
+
+    fn poll(&mut self) -> Poll01<Self::Item, Self::Error> {
+        let mut locals = LocalMap::new();
+        let waker = current_as_waker();
+        let mut cx = Context::new(&mut locals, &waker, &mut self.exec);
+
+        match self.v02.poll(&mut cx) {
+            Ok(Async02::Ready(val)) => Ok(Async01::Ready(val)),
+            Ok(Async02::Pending) => Ok(Async01::NotReady),
+            Err(never) => match never {}
         }
     }
 }

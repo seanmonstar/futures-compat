@@ -3,12 +3,16 @@ use std::{mem, io, ptr};
 
 use futures::{Async as Async01, Future as Future01, Poll as Poll01, Stream as Stream01};
 use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
+use futures::future::{Executor as Executor01};
 
-use futures_core::{Async as Async02, Future as Future02, Poll as Poll02, Stream as Stream02};
+use futures_core::{Async as Async02, Future as Future02, Never, Poll as Poll02, Stream as Stream02};
+use futures_core::executor::{Executor as Executor02, SpawnError};
 use futures_core::task::{Context, Waker};
 use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
 
 use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
+
+use super::futures_02::{Future02NeverAs01Unit};
 
 /// Wrap a `Future` from v0.1 as a `Future` from v0.2.
 #[derive(Debug)]
@@ -22,6 +26,12 @@ pub struct Future01As02<F> {
 #[must_use = "streams do nothing unless polled"]
 pub struct Stream01As02<S> {
     v01: S,
+}
+
+/// Wrap an `Executor` from v0.1 as a `Executor` from v0.2.
+#[derive(Clone, Debug)]
+pub struct Executor01As02<E> {
+    v01: E,
 }
 
 /// Wrap a IO from tokio-io as an `AsyncRead`/`AsyncWrite` from v0.2.
@@ -43,6 +53,14 @@ pub trait FutureInto02: Future01 {
 pub trait StreamInto02: Stream01 {
     /// Converts this stream into a `Stream01As02`.
     fn into_02_compat(self) -> Stream01As02<Self> where Self: Sized;
+}
+
+/// A trait to convert an `Executor` from v0.1 into an [`Executor01As02`](Executor01As02).
+///
+/// Implemented for generic v0.1 `Executor`s automatically.
+pub trait ExecutorInto02 {
+    /// Converts this stream into a `Executor01As02`.
+    fn into_02_compat(self) -> Executor01As02<Self> where Self: Sized;
 }
 
 /// A trait to convert any `AsyncRead`/`AsyncWrite` from tokio-io into a [`TokioAsAsyncIo02`](TokioAsAsyncIo02).
@@ -104,6 +122,41 @@ where
 
     fn poll_next(&mut self, cx: &mut Context) -> Poll02<Option<Self::Item>, Self::Error> {
         with_context_poll(cx, || self.v01.poll())
+    }
+}
+
+impl<E> ExecutorInto02 for E
+where
+    E: Executor01<
+        Future02NeverAs01Unit<
+            Executor01As02<Self>,
+            Box<Future02<Item=(), Error=Never> + Send>
+        >
+    >,
+    E: Clone + Send + 'static,
+{
+    fn into_02_compat(self) -> Executor01As02<Self> {
+        Executor01As02 {
+            v01: self,
+        }
+    }
+}
+
+impl<E> Executor02 for Executor01As02<E>
+where
+    E: Executor01<
+        Future02NeverAs01Unit<
+            Self,
+            Box<Future02<Item=(), Error=Never> + Send>
+        >
+    >,
+    E: Clone + Send + 'static,
+{
+    fn spawn(&mut self, f: Box<Future02<Item=(), Error=Never> + Send>) -> Result<(), SpawnError> {
+        use super::futures_02::FutureInto01;
+
+        self.v01.execute(f.into_01_compat_never_unit(self.clone()))
+            .map_err(|_| SpawnError::shutdown())
     }
 }
 

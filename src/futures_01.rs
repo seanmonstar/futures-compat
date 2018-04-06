@@ -48,7 +48,7 @@ pub trait StreamInto02: Stream01 {
 /// A trait to convert any `AsyncRead`/`AsyncWrite` from tokio-io into a [`TokioAsAsyncIo02`](TokioAsAsyncIo02).
 ///
 /// Implemented for all types that implement tokio-io's `AsyncRead`/`AsyncWrite` automatically.
-pub trait AsyncIoIntoTokio {
+pub trait TokioIntoAsyncIo02 {
     /// Converts this IO into an `TokioAsAsyncIo02`.
     fn into_v02_compat(self) -> TokioAsAsyncIo02<Self>
     where
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<I> AsyncIoIntoTokio for I {
+impl<I> TokioIntoAsyncIo02 for I {
     fn into_v02_compat(self) -> TokioAsAsyncIo02<Self>
     where
         Self: AsyncReadTk + AsyncWriteTk + Sized,

@@ -58,7 +58,12 @@ pub trait StreamInto02: Stream01 {
 /// A trait to convert an `Executor` from v0.1 into an [`Executor01As02`](Executor01As02).
 ///
 /// Implemented for generic v0.1 `Executor`s automatically.
-pub trait ExecutorInto02 {
+pub trait ExecutorInto02: Executor01<
+        Future02NeverAs01Unit<
+            BoxedExecutor02,
+            Box<Future02<Item=(), Error=Never> + Send>
+        >
+    > + Clone + Send + 'static {
     /// Converts this stream into a `Executor01As02`.
     fn into_02_compat(self) -> Executor01As02<Self> where Self: Sized;
 }
@@ -129,7 +134,7 @@ impl<E> ExecutorInto02 for E
 where
     E: Executor01<
         Future02NeverAs01Unit<
-            Executor01As02<Self>,
+            BoxedExecutor02,
             Box<Future02<Item=(), Error=Never> + Send>
         >
     >,
@@ -146,7 +151,7 @@ impl<E> Executor02 for Executor01As02<E>
 where
     E: Executor01<
         Future02NeverAs01Unit<
-            Self,
+            BoxedExecutor02,
             Box<Future02<Item=(), Error=Never> + Send>
         >
     >,
@@ -155,8 +160,18 @@ where
     fn spawn(&mut self, f: Box<Future02<Item=(), Error=Never> + Send>) -> Result<(), SpawnError> {
         use super::futures_02::FutureInto01;
 
-        self.v01.execute(f.into_01_compat_never_unit(self.clone()))
+        self.v01.execute(f.into_01_compat_never_unit(BoxedExecutor02(Box::new(self.clone()))))
             .map_err(|_| SpawnError::shutdown())
+    }
+}
+
+/// A wrapper of `Box<Executor>` because it's missing from the futures crate (lolz).
+#[allow(missing_debug_implementations)]
+pub struct BoxedExecutor02(Box<Executor02 + Send>);
+
+impl Executor02 for BoxedExecutor02 {
+    fn spawn(&mut self, f: Box<Future02<Item=(), Error=Never> + Send>) -> Result<(), SpawnError> {
+        (&mut *self.0).spawn(f)
     }
 }
 

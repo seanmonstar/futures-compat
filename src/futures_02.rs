@@ -7,7 +7,7 @@ use futures::task::{self as task01, Task as Task01};
 
 use futures_core::{Async as Async02, Future as Future02, Never, Stream as Stream02};
 use futures_core::task::{Context, LocalMap, Wake, Waker};
-use futures_core::executor::{Executor as Executor02};
+use futures_core::executor::{Executor as Executor02, SpawnError};
 use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
 use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
 
@@ -40,6 +40,16 @@ pub struct Stream02As01<E, S> {
 pub struct AsyncIo02AsTokio<E, S> {
     exec: E,
     v02: S,
+}
+
+/// A wrapper of `Box<Executor>` because it's missing from the futures crate (lolz).
+#[allow(missing_debug_implementations)]
+pub struct BoxedExecutor02(pub(crate) Box<Executor02 + Send>);
+
+impl Executor02 for BoxedExecutor02 {
+    fn spawn(&mut self, f: Box<Future02<Item=(), Error=Never> + Send>) -> Result<(), SpawnError> {
+        (&mut *self.0).spawn(f)
+    }
 }
 
 /// A trait to convert any `Future` from v0.2 into a [`Future02As01`](Future02As01).

@@ -12,7 +12,7 @@ use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
 
 use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
 
-use super::futures_02::{Future02NeverAs01Unit};
+use super::futures_02::{BoxedExecutor02, Future02NeverAs01Unit};
 
 /// Wrap a `Future` from v0.1 as a `Future` from v0.2.
 #[derive(Debug)]
@@ -165,15 +165,6 @@ where
     }
 }
 
-/// A wrapper of `Box<Executor>` because it's missing from the futures crate (lolz).
-#[allow(missing_debug_implementations)]
-pub struct BoxedExecutor02(Box<Executor02 + Send>);
-
-impl Executor02 for BoxedExecutor02 {
-    fn spawn(&mut self, f: Box<Future02<Item=(), Error=Never> + Send>) -> Result<(), SpawnError> {
-        (&mut *self.0).spawn(f)
-    }
-}
 
 impl<I> TokioIntoAsyncIo02 for I {
     fn into_v02_compat(self) -> TokioAsAsyncIo02<Self>

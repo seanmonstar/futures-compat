@@ -1,6 +1,6 @@
 [package]
 name = "futures-compat"
-version = "0.0.0"
+version = "0.0.1"
 description = "A compatibility layer between different versions of Future."
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 license = "MIT"

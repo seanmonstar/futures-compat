@@ -10,6 +10,7 @@
 
 extern crate futures;
 extern crate futures_core;
+extern crate futures_sink;
 extern crate futures_io;
 extern crate tokio_io;
 

@@ -1,7 +1,15 @@
 //! futures 0.1.x compatibility.
 use std::io;
 
-use futures::{Async as Async01, Future as Future01, Poll as Poll01, Stream as Stream01};
+use futures::{
+    Async as Async01,
+    Future as Future01,
+    Poll as Poll01,
+    Stream as Stream01,
+    Sink as Sink01,
+    StartSend as StartSend01,
+    AsyncSink as AsyncSink01,
+};
 use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
 use futures::future::{Executor as Executor01};
 
@@ -9,6 +17,7 @@ use futures_core::{Async as Async02, Future as Future02, Never, Poll as Poll02, 
 use futures_core::executor::{Executor as Executor02, SpawnError};
 use futures_core::task::{Context, Waker};
 use futures_io::{AsyncRead as AsyncRead02, AsyncWrite as AsyncWrite02};
+use futures_sink::{Sink as Sink02};
 
 use tokio_io::{AsyncRead as AsyncReadTk, AsyncWrite as AsyncWriteTk};
 
@@ -26,6 +35,15 @@ pub struct Future01As02<F> {
 #[must_use = "streams do nothing unless polled"]
 pub struct Stream01As02<S> {
     v01: S,
+}
+
+/// Wrap a `Sink` from v0.1 as a `Sink` from v0.2.
+///
+/// Internally, this buffers all `SinkItem` values until flushed or closed.
+#[derive(Debug)]
+pub struct Sink01As02<S> where S: Sink01 {
+    v01: S,
+    buf: Vec<S::SinkItem>,
 }
 
 /// Wrap an `Executor` from v0.1 as a `Executor` from v0.2.
@@ -53,6 +71,14 @@ pub trait FutureInto02: Future01 {
 pub trait StreamInto02: Stream01 {
     /// Converts this stream into a `Stream01As02`.
     fn into_02_compat(self) -> Stream01As02<Self> where Self: Sized;
+}
+
+/// A trait convert any `Sink` from v0.1 into a [`Sink01As02`](Sink01As02).
+///
+/// Implemented for all types that implement v0.1's `Sink` automatically.
+pub trait SinkInto02: Sink01 {
+    /// Converts this sink into a `Sink01As02`.
+    fn sink_into_02_compat(self) -> Sink01As02<Self> where Self: Sized;
 }
 
 /// A trait to convert an `Executor` from v0.1 into an [`Executor01As02`](Executor01As02).
@@ -127,6 +153,136 @@ where
 
     fn poll_next(&mut self, cx: &mut Context) -> Poll02<Option<Self::Item>, Self::Error> {
         with_context_poll(cx, || self.v01.poll())
+    }
+}
+
+impl<S> Sink01 for Stream01As02<S>
+where
+    S: Sink01,
+{
+    type SinkItem = S::SinkItem;
+    type SinkError = S::SinkError;
+
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend01<Self::SinkItem, Self::SinkError> {
+        self.v01.start_send(item)
+    }
+
+    fn poll_complete(&mut self) -> Poll01<(), Self::SinkError> {
+        self.v01.poll_complete()
+    }
+}
+
+impl<S> Sink02 for Stream01As02<S>
+where
+    S: Sink02,
+{
+    type SinkItem = S::SinkItem;
+    type SinkError = S::SinkError;
+
+    fn poll_ready(&mut self, cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        self.v01.poll_ready(cx)
+    }
+
+    fn start_send(&mut self, item: Self::SinkItem) -> Result<(), Self::SinkError> {
+        self.v01.start_send(item)
+    }
+
+    fn poll_flush(&mut self, cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        self.v01.poll_flush(cx)
+    }
+
+    fn poll_close(&mut self, cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        self.v01.poll_close(cx)
+    }
+}
+
+impl<S> SinkInto02 for S
+where
+    S: Sink01,
+{
+    fn sink_into_02_compat(self) -> Sink01As02<Self>
+    where
+        Self: Sized,
+    {
+        Sink01As02 {
+            v01: self,
+            buf: Vec::new(),
+        }
+    }
+}
+
+impl<S> Sink02 for Sink01As02<S>
+where
+    S: Sink01,
+{
+    type SinkItem = S::SinkItem;
+    type SinkError = S::SinkError;
+
+    fn poll_ready(&mut self, _cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        // Due to the internal buffer, this sink will always be ready.
+        Ok(Async02::Ready(()))
+    }
+
+    fn start_send(&mut self, item: Self::SinkItem) -> Result<(), Self::SinkError> {
+        // Again, the buffer is always ready.
+        self.buf.push(item);
+        Ok(())
+    }
+
+    fn poll_flush(&mut self, cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        // Try sending all buffered items one by one.
+        loop {
+            if self.buf.len() == 0 {
+                break;
+            }
+
+            let item = self.buf.remove(0);
+
+            let start_send = with_context(cx, || self.v01.start_send(item));
+
+            match start_send {
+                Ok(AsyncSink01::NotReady(t)) => {
+                    // Queue the item back and stop trying.
+                    self.buf.insert(0, t);
+                    break;
+                },
+
+                Err(e) => return Err(e),
+
+                // Keep going.
+                Ok(AsyncSink01::Ready) => continue,
+            }
+        }
+
+        with_context_poll(cx, || self.v01.poll_complete())
+    }
+
+    fn poll_close(&mut self, cx: &mut Context) -> Poll02<(), Self::SinkError> {
+        self.poll_flush(cx)
+    }
+}
+
+impl<S> Stream01 for Sink01As02<S>
+where
+    S: Sink01 + Stream01,
+{
+    type Item = S::Item;
+    type Error = S::Error;
+
+    fn poll(&mut self) -> Poll01<Option<Self::Item>, Self::Error> {
+        self.v01.poll()
+    }
+}
+
+impl<S> Stream02 for Sink01As02<S>
+where
+    S: Sink01 + Stream02,
+{
+    type Item = S::Item;
+    type Error = S::Error;
+
+    fn poll_next(&mut self, cx: &mut Context) -> Poll02<Option<Self::Item>, Self::Error> {
+        self.v01.poll_next(cx)
     }
 }
 

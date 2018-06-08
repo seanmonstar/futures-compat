@@ -1,5 +1,5 @@
 //! futures 0.1.x compatibility.
-use std::{mem, io, ptr};
+use std::io;
 
 use futures::{Async as Async01, Future as Future01, Poll as Poll01, Stream as Stream01};
 use futures::executor::{Notify, NotifyHandle, UnsafeNotify, with_notify};
@@ -229,32 +229,27 @@ struct WakerToHandle<'a>(&'a Waker);
 #[doc(hidden)]
 impl<'a> From<WakerToHandle<'a>> for NotifyHandle {
     fn from(handle: WakerToHandle<'a>) -> NotifyHandle {
+        let ptr = Box::new(NotifyWaker(handle.0.clone()));
+
         unsafe {
-            let ptr = NotifyWaker(handle.0.clone());
-            let ptr = mem::transmute::<NotifyWaker, *mut UnsafeNotify>(ptr);
-            NotifyHandle::new(ptr)
+            NotifyHandle::new(Box::into_raw(ptr))
         }
     }
 }
 
 impl Notify for NotifyWaker {
     fn notify(&self, _: usize) {
-        unsafe {
-            let me: *const NotifyWaker = self;
-            (&*me).0.wake();
-        }
+        self.0.wake();
     }
 }
 
 unsafe impl UnsafeNotify for NotifyWaker {
     unsafe fn clone_raw(&self) -> NotifyHandle {
-        let me: *const NotifyWaker = self;
-        WakerToHandle(&(&*me).0).into()
+        WakerToHandle(&self.0).into()
     }
 
     unsafe fn drop_raw(&self) {
-        let mut me: *const NotifyWaker = self;
-        let me = &mut me as *mut *const NotifyWaker;
-        ptr::drop_in_place(me);
+        let ptr: *const UnsafeNotify = self;
+        drop(Box::from_raw(ptr as *mut UnsafeNotify));
     }
 }

@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 futures = "0.1"
-futures-core = "0.2"
-futures-sink = "0.2"
-futures-io = "0.2"
+futures-core-preview = "0.2"
+futures-sink-preview = "0.2"
+futures-io-preview = "0.2"
 tokio-io = "0.1.6"
